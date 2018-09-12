@@ -63,7 +63,9 @@ def work_loop(database, sock):
     try:
         while True:
             data, addr = sock.recvfrom(2048)
+
             #clear_outdated_cash(database)
+
             try:
                 dns_record = DNSRecord.parse(data)
             except DNSError:
