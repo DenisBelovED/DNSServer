@@ -44,19 +44,20 @@ def clear_outdated_cash(database):
         print(str(datetime.now()) + " - cleared " + str(cache_delta) + " resource records")
 
 
-'''def add_record(rr):
+def add_record(rr, database, date_time):
     k = (str(rr.rname).lower(), rr.rtype)
     if k in database:
-        database[k].add(Pair(rr, dt.now()))
+        database[k].add(Packet(rr, date_time))
     else:
-        database[k] = {Pair(rr, dt.now())}
+        database[k] = {Packet(rr, date_time)}
 
-'''
+
 def add_records(dns_record, database):
     for r in dns_record.rr + dns_record.auth + dns_record.ar:
         if r.rtype in {1, 2}:
-            add_record(r)
-            log("Record added.")
+            date_time = str(datetime.now())
+            add_record(r, database, date_time)
+            print(date_time + " - DNS record added.")
 
 
 def work_loop(database, sock):
