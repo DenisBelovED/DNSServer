@@ -60,12 +60,32 @@ def add_records(dns_record, database):
             print(date_time + " - DNS record added.")
 
 
+def get_response(dns_record, database):
+    if dns_record.q.qtype in {1, 2}:
+        key = (str(dns_record.q.qname).lower(), dns_record.q.qtype)
+        try:
+            if key in database and database[key]:
+                reply = dns_record.reply()
+                reply.rr = [p.rr for p in database[key]]
+                return reply
+        except:
+            pass
+
+
+def send_response(response, addr):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.connect(addr)
+    sock.sendall(response)
+    sock.close()
+
+
 def work_loop(database, sock):
     try:
         while True:
             data, addr = sock.recvfrom(2048)
 
-            #clear_outdated_cash(database)
+            if database:
+                clear_outdated_cash(database)
 
             try:
                 dns_record = DNSRecord.parse(data)
@@ -74,13 +94,18 @@ def work_loop(database, sock):
                 continue
 
             add_records(dns_record, database)
-            '''if not r.header.qr:
-                resp = get_resp(r)
+            if not dns_record.header.qr:
+                response = get_response(dns_record, database)
                 try:
-                    send_to(get_with_caching() if resp is None else resp.pack(), *addr)
-                    log("Response sent.")
+                    if response:
+                        send_response(sock, response.pack())
+                    else:
+                        resp = dns_record.send("ns1.e1.ru")
+                        add_records(DNSRecord.parse(resp), database)
+                        send_response(resp, addr)
+                    print(str(datetime.now()) + " - response send")
                 except (OSError, DNSError):
-                    log("Failed to respond.")'''
+                    print(str(datetime.now()) + " - transmission error")
     except:
         print('server error')
 
