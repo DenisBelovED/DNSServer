@@ -6,10 +6,11 @@ from dnslib import DNSError, DNSRecord
 
 class Packet:
     def __init__(self, rr, create_time):
-        self.resource_record = rr
-        self.create_time = create_time
+        self.resource_record = rr  # ресурсная запись
+        self.create_time = create_time  # время создания записи
 
 
+#  загркзка кэша из файла
 def load_history():
     try:
         with open('data.pickle', 'rb') as f:
@@ -17,10 +18,11 @@ def load_history():
         print('history loaded')
     except:
         print('history not exist')
-        return None
+        return {}
     return database
 
 
+#  дампинг кеша в файл
 def save_history(data):
     try:
         with open('data.pickle', 'wb') as f:
@@ -30,11 +32,13 @@ def save_history(data):
         print('dumping error')
 
 
+#  проверка записи, истёк ttl или нет
 def is_expired(packet):
     return datetime.now() - packet.create_time > timedelta(seconds=packet.resource_record.ttl)
 
 
-def clear_outdated_cash(database):
+#  очистка просроченного кеша
+def clear_outdated_cash():
     cache_delta = 0
     for key, value in database.items():
         old_length = len(value)
@@ -44,7 +48,8 @@ def clear_outdated_cash(database):
         print(str(datetime.now()) + " - cleared " + str(cache_delta) + " resource records")
 
 
-def add_record(rr, database, date_time):
+#  добавление/обновление записи в кеше
+def add_record(rr, date_time):
     k = (str(rr.rname).lower(), rr.rtype)
     if k in database:
         database[k].add(Packet(rr, date_time))
@@ -52,40 +57,42 @@ def add_record(rr, database, date_time):
         database[k] = {Packet(rr, date_time)}
 
 
-def add_records(dns_record, database):
+def add_records(dns_record):
     for r in dns_record.rr + dns_record.auth + dns_record.ar:
-        if r.rtype in {1, 2}:
-            date_time = str(datetime.now())
-            add_record(r, database, date_time)
-            print(date_time + " - DNS record added.")
+        date_time = datetime.now()
+        add_record(r, date_time)
+        print(str(date_time) + " - DNS record added.")
 
 
-def get_response(dns_record, database):
-    if dns_record.q.qtype in {1, 2}:
-        key = (str(dns_record.q.qname).lower(), dns_record.q.qtype)
-        try:
-            if key in database and database[key]:
-                reply = dns_record.reply()
-                reply.rr = [p.rr for p in database[key]]
-                return reply
-        except:
-            pass
+#  получение ответа из кеша, если он там есть
+def get_response(dns_record):
+    key = (str(dns_record.q.qname).lower(), dns_record.q.qtype)
+    if key in database and database[key]:
+        reply = dns_record.reply()
+        reply.rr = [p.resource_record for p in database[key]]
+        return reply
 
 
+#  отправить результат юзеру
 def send_response(response, addr):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.connect(addr)
     sock.sendall(response)
     sock.close()
 
 
-def work_loop(database, sock):
+#  основной цикл
+def work_loop():
+    global sock
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("", 40000))
+
     try:
         while True:
             data, addr = sock.recvfrom(2048)
 
             if database:
-                clear_outdated_cash(database)
+                clear_outdated_cash()
 
             try:
                 dns_record = DNSRecord.parse(data)
@@ -93,16 +100,18 @@ def work_loop(database, sock):
                 print('getting incorrect query, packet ignored')
                 continue
 
-            add_records(dns_record, database)
+            add_records(dns_record)
             if not dns_record.header.qr:
-                response = get_response(dns_record, database)
+                response = get_response(dns_record)
                 try:
                     if response:
-                        send_response(sock, response.pack())
+                        send_response(response.pack(), addr)
                     else:
-                        resp = dns_record.send("ns1.e1.ru")
-                        add_records(DNSRecord.parse(resp), database)
+                        resp = dns_record.send("dns.yandex.ru")
+                        add_records(DNSRecord.parse(resp))
                         send_response(resp, addr)
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.bind(("", 40000))
                     print(str(datetime.now()) + " - response send")
                 except (OSError, DNSError):
                     print(str(datetime.now()) + " - transmission error")
@@ -112,16 +121,17 @@ def work_loop(database, sock):
 
 def main():
     print('server started')
+
+    global database
+
     database = load_history()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("", 40000))
-
-    work_loop(database, sock)
-
-    if database:
-        save_history(database)
-    print('server stop')
+    try:
+        work_loop()
+    finally:
+        if database:
+            save_history(database)
+        print('server stop')
 
 
 if __name__ == '__main__':
