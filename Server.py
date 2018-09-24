@@ -57,6 +57,7 @@ def add_record(rr, date_time):
         database[k] = {Packet(rr, date_time)}
 
 
+#  извлечение ресурсных записей с ответом, записей с указанием на уполномоченный сервер, записей с дополнительной информацией
 def add_records(dns_record):
     for r in dns_record.rr + dns_record.auth + dns_record.ar:
         date_time = datetime.now()
